@@ -7,6 +7,41 @@
  */
 const Ultraviolet = self.Ultraviolet;
 
+function createContext(html) {
+    let modifiedHTML = html;
+
+    function injectAtPosition(content, position) {
+        return modifiedHTML.slice(0, position) + content + modifiedHTML.slice(position);
+    }
+
+    return {
+        injectHead: (content) => {
+            const headCloseIndex = modifiedHTML.indexOf('</head>');
+            if (headCloseIndex !== -1) {
+                modifiedHTML = injectAtPosition(content, headCloseIndex);
+            }
+        },
+        injectCSS: (content) => {
+            const styleTag = `<style>${content}</style>`;
+            const headCloseIndex = modifiedHTML.indexOf('</head>');
+            if (headCloseIndex !== -1) {
+                modifiedHTML = injectAtPosition(styleTag, headCloseIndex);
+            }
+        },
+        injectJS: (content) => {
+            const scriptTag = `<script>${content}</script>`;
+            const bodyCloseIndex = modifiedHTML.indexOf('</body>');
+            if (bodyCloseIndex !== -1) {
+                modifiedHTML = injectAtPosition(scriptTag, bodyCloseIndex);
+            } else {
+                modifiedHTML += scriptTag;
+            }
+        },
+
+        getModifiedHtml: () => modifiedHTML
+    };
+}
+
 const cspHeaders = [
     'cross-origin-embedder-policy',
     'cross-origin-opener-policy',
@@ -237,8 +272,18 @@ class UVServiceWorker extends Ultraviolet.EventEmitter {
                                 responseCtx.headers['content-type'] || ''
                             )
                         ) {
+                            let modifiedResponse = await response.text();
+
+                            if (typeof this.config.inject === 'function') {
+                                const ctx = createContext(modifiedResponse);
+
+                                await this.config.inject(ctx, new URL(fetchedURL));
+
+                                modifiedResponse = ctx.getModifiedHtml();
+                            }
+
                             responseCtx.body = ultraviolet.rewriteHtml(
-                                await response.text(),
+                                modifiedResponse,
                                 {
                                     document: true,
                                     injectHead: ultraviolet.createHtmlInject(
@@ -397,12 +442,12 @@ function errorTemplate(
         errorTrace.value = ${JSON.stringify(trace)};
         fetchedURL.textContent = ${JSON.stringify(fetchedURL)};
         for (const node of document.querySelectorAll("#uvHostname")) node.textContent = ${JSON.stringify(
-            location.hostname
-        )};
+        location.hostname
+    )};
         reload.addEventListener("click", () => location.reload());
         uvVersion.textContent = ${JSON.stringify(
-            process.env.ULTRAVIOLET_VERSION
-        )};
+        process.env.ULTRAVIOLET_VERSION
+    )};
     `
 
     return (
@@ -438,8 +483,7 @@ function errorTemplate(
         <button id="reload">Reload</button>
         <hr />
         <p><i>Ultraviolet v<span id="uvVersion"></span></i></p>
-        <script src="${
-            'data:application/javascript,' + encodeURIComponent(script)
+        <script src="${'data:application/javascript,' + encodeURIComponent(script)
         }"></script>
         </body>
         </html>

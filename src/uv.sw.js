@@ -163,6 +163,33 @@ class UVServiceWorker extends Ultraviolet.EventEmitter {
                 ? 'blob:' + location.origin + requestCtx.url.pathname
                 : requestCtx.url;
 
+            if (typeof this.config.middleware === 'function') {
+                const middlewareReq = new Request(fetchedURL, {
+                    headers: requestCtx.headers,
+                    method: requestCtx.method,
+                    body: requestCtx.body,
+                    credentials: requestCtx.credentials,
+                    mode: requestCtx.mode,
+                    cache: requestCtx.cache,
+                    redirect: requestCtx.redirect,
+                });
+
+                const middleware = await this.config.middleware(middlewareReq);
+
+                if (middleware instanceof Response) {
+                    return middleware;
+                } else if (middleware instanceof Request) {
+                    fetchedURL = middleware.url;
+                    requestCtx.headers = Object.fromEntries(middleware.headers.entries());
+                    requestCtx.method = middleware.method;
+                    requestCtx.body = middleware.body;
+                    requestCtx.credentials = middleware.credentials;
+                    requestCtx.mode = middleware.mode;
+                    requestCtx.cache = middleware.cache;
+                    requestCtx.redirect = middleware.redirect;
+                }
+            }
+
             const response = await this.bareClient.fetch(fetchedURL, {
                 headers: requestCtx.headers,
                 method: requestCtx.method,
